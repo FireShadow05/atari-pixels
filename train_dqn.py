@@ -19,7 +19,7 @@ config = {
     'env_name': 'Pitfall',
     'n_actions': 18,
     'state_shape': (8, 84, 84),
-    'max_episodes': 10,
+    'max_episodes': 1000,
     'max_steps': 1000,
     'target_update_freq': 10000, #since i'm doing 5 update steps per environment step, this means 200*5=1000 steps between target network updates
     'checkpoint_dir': 'checkpoints',
