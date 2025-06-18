@@ -245,8 +245,8 @@ def record_gameplay_videos(num_episodes=5, output_dir='videos', skill_level=None
     env = AtariBreakoutEnv()
     
     # Initialize agents
-    random_agent = RandomAgent(n_actions=4)
-    dqn_agent = DQNAgent(n_actions=4, state_shape=(8, 84, 84))
+    random_agent = RandomAgent(n_actions=18)
+    dqn_agent = DQNAgent(n_actions=18, state_shape=(8, 84, 84))
     
     # Load trained model if available
     if skill_level is not None:
@@ -528,8 +528,8 @@ def record_bulk_videos(
         os.makedirs(output_dir, exist_ok=True)
 
     env = AtariBreakoutEnv()
-    random_agent = RandomAgent(n_actions=4)
-    dqn_agent = DQNAgent(n_actions=4, state_shape=(8, 84, 84))
+    random_agent = RandomAgent(n_actions=18)
+    dqn_agent = DQNAgent(n_actions=18, state_shape=(8, 84, 84))
     if skill_level is not None:
         model_path = os.path.join('checkpoints', f'dqn_skill_{skill_level}.pth')
         checkpoint_name = f'skill_{skill_level}'

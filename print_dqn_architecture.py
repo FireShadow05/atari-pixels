@@ -7,7 +7,7 @@ def count_parameters(model):
 def main():
     # Example input shape and number of actions (adjust as needed)
     state_shape = (8, 84, 84)  # 8 stacked frames, 84x84 resolution
-    n_actions = 4  # Example: 4 possible actions
+    n_actions = 18  # Example: 4 possible actions
 
     agent = DQNAgent(n_actions=n_actions, state_shape=state_shape)
     print("Policy Network Architecture:\n", agent.policy_net)

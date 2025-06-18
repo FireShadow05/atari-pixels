@@ -16,11 +16,11 @@ class AtariBreakoutEnv:
         """
         # Create the base Atari environment with specific settings
         self.env = gym.make(
-            "ALE/Breakout-v5",
-            render_mode='rgb_array',  # Enable rgb_array rendering
-            frameskip=4,  # Skip 4 frames between actions
-            repeat_action_probability=0.0,  # Disable sticky actions
-            full_action_space=False  # Use minimal action space
+            "ALE/Pitfall-v5",          
+            render_mode="rgb_array",  
+            frameskip=4,               
+            repeat_action_probability=0.0,  
+            full_action_space=True     
         )
         
         # Store action space size for the agent

@@ -39,13 +39,13 @@ def test_env_step():
     env.close()
 
 def test_random_agent_initialization():
-    agent = RandomAgent(n_actions=4)
+    agent = RandomAgent(n_actions=18)
     assert hasattr(agent, 'select_action'), "Agent should have select_action method"
     assert hasattr(agent, 'record_transition'), "Agent should have record_transition method"
     assert hasattr(agent, 'save_episode_data'), "Agent should have save_episode_data method"
 
 def test_random_agent_action_selection():
-    agent = RandomAgent(n_actions=4)
+    agent = RandomAgent(n_actions=18)
     action = agent.select_action()
     assert isinstance(action, int), "Action should be an integer"
     assert 0 <= action < 4, "Action should be in range [0, 3]"
@@ -54,7 +54,7 @@ def test_data_recording():
     # Create temporary directories for testing
     os.makedirs("test_data/episode_001", exist_ok=True)
     
-    agent = RandomAgent(n_actions=4)
+    agent = RandomAgent(n_actions=18)
     dummy_frame = np.zeros((84, 84), dtype=np.uint8)
     
     # Record some transitions
@@ -78,7 +78,7 @@ def test_data_recording():
 
 def test_full_episode():
     env = AtariBreakoutEnv()
-    agent = RandomAgent(n_actions=4)
+    agent = RandomAgent(n_actions=18)
     
     obs, info = env.reset()
     done = False
@@ -96,7 +96,7 @@ def test_full_episode():
 
 def test_dqn_agent_initialization():
     from dqn_agent import DQNAgent
-    agent = DQNAgent(n_actions=4, state_shape=(8, 84, 84))
+    agent = DQNAgent(n_actions=18, state_shape=(8, 84, 84))
     assert hasattr(agent, 'select_action'), "DQNAgent should have select_action method"
     assert hasattr(agent, 'optimize_model'), "DQNAgent should have optimize_model method"
     assert hasattr(agent, 'update_target_network'), "DQNAgent should have update_target_network method"
@@ -104,7 +104,7 @@ def test_dqn_agent_initialization():
 
 def test_dqn_agent_action_selection():
     from dqn_agent import DQNAgent
-    agent = DQNAgent(n_actions=4, state_shape=(8, 84, 84))
+    agent = DQNAgent(n_actions=18, state_shape=(8, 84, 84))
     dummy_state = np.zeros((8, 84, 84), dtype=np.uint8)
     action = agent.select_action(dummy_state)
     assert isinstance(action, int), "Action should be an integer"
@@ -122,7 +122,7 @@ def test_dqn_replay_buffer():
 
 def test_dqn_target_network_sync():
     from dqn_agent import DQNAgent
-    agent = DQNAgent(n_actions=4, state_shape=(8, 84, 84))
+    agent = DQNAgent(n_actions=18, state_shape=(8, 84, 84))
     # Simulate parameter change
     for param in agent.policy_net.parameters():
         param.data += 1.0
@@ -134,7 +134,7 @@ def test_dqn_target_network_sync():
 def test_dqn_optimize_model():
     import torch
     from dqn_agent import DQNAgent
-    agent = DQNAgent(n_actions=4, state_shape=(8, 84, 84))
+    agent = DQNAgent(n_actions=18, state_shape=(8, 84, 84))
     # Fill replay buffer with dummy transitions
     for _ in range(128):  # Match the agent's batch_size
         state = np.zeros((8, 84, 84), dtype=np.uint8)
@@ -155,7 +155,7 @@ def test_dqn_optimize_model():
 def test_dqn_training_loop():
     from dqn_agent import DQNAgent
     from atari_env import AtariBreakoutEnv
-    agent = DQNAgent(n_actions=4, state_shape=(8, 84, 84))
+    agent = DQNAgent(n_actions=18, state_shape=(8, 84, 84))
     env = AtariBreakoutEnv()
     obs, info = env.reset()
     state_stack = np.stack([obs]*8, axis=0)  # (8, 84, 84)

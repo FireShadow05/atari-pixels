@@ -16,10 +16,10 @@ from collections import deque
 
 # Config
 config = {
-    'env_name': 'Breakout',
-    'n_actions': 4,
+    'env_name': 'Pitfall',
+    'n_actions': 18,
     'state_shape': (8, 84, 84),
-    'max_episodes': 10000,
+    'max_episodes': 10,
     'max_steps': 1000,
     'target_update_freq': 10000, #since i'm doing 5 update steps per environment step, this means 200*5=1000 steps between target network updates
     'checkpoint_dir': 'checkpoints',
@@ -115,7 +115,6 @@ def evaluate_agent(agent, env, n_episodes=10, log_id=None, return_q_values=False
     if return_q_values:
         return np.mean(rewards), np.concatenate(all_q_values)
     return np.mean(rewards)
-
 
 def main():
     parser = argparse.ArgumentParser()
