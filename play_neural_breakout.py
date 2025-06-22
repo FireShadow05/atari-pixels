@@ -22,7 +22,7 @@ import pygame
 from PIL import Image
 import time
 import argparse
-from latent_action_model import load_latent_action_model, ActionStateToLatentMLP
+from latent_action_model import load_latent_action_model, ActionStateToLatentMLP, ActionToLatentMLP
 
 # --- Configuration ---
 WINDOW_WIDTH = 640
@@ -38,10 +38,36 @@ def get_device():
     else:
         return torch.device('cpu')
 
-def action_to_onehot(action_idx, device):
-    onehot = torch.zeros(1, 4, device=device)
+def action_to_onehot(action_idx, N_ACTIONS, device):
+    onehot = torch.zeros(1, N_ACTIONS, device=device)
     onehot[0, action_idx] = 1.0
     return onehot
+
+def key_combo_to_action(keys):
+    up    = keys[pygame.K_UP]
+    down  = keys[pygame.K_DOWN]
+    left  = keys[pygame.K_LEFT]
+    right = keys[pygame.K_RIGHT]
+    fire  = keys[pygame.K_SPACE]
+
+    # base direction
+    if up  and right: base = 6   # UPRIGHT
+    elif up  and left:  base = 7   # UPLEFT
+    elif down and right: base = 8   # DOWNRIGHT
+    elif down and left:  base = 9   # DOWNLEFT
+    elif up:             base = 2   # UP
+    elif right:          base = 3   # RIGHT
+    elif left:           base = 4   # LEFT
+    elif down:           base = 5   # DOWN
+    else:                base = 0   # NOOP
+
+    # add FIRE/JUMP
+    if fire and base == 0:
+        return 1                   # pure FIRE
+    elif fire and base in (2, 3, 4, 5, 6, 7, 8, 9):
+        return {2:10, 3:11, 4:12, 5:13, 6:14, 7:15, 8:16, 9:17}[base]
+    else:
+        return base
 
 def main():
     # Parse arguments
@@ -70,16 +96,18 @@ def main():
     
     # Load action-to-latent model
     print("[INFO] Loading action-to-latent model...")
-    action_model = ActionStateToLatentMLP().to(device)
-    ckpt = torch.load('checkpoints/latent_action/action_state_to_latent_best.pt', map_location=device)
-    action_model.load_state_dict(ckpt['model_state_dict'])
+    # action_model = ActionStateToLatentMLP().to(device)
+    # ckpt = torch.load('checkpoints/latent_action/action_state_to_latent_best.pt', map_location=device)
+    action_model = ActionToLatentMLP().to(device)
+    ckpt = torch.load('checkpoints/latent_action/action_to_latent_best.pt', map_location=device)
+    action_model.load_state_dict(ckpt['model_state_dict'], strict = False)
     action_model.eval()
     if device.type == 'cuda':
         action_model = torch.compile(action_model)
     
     # Load initial frame
     print("[INFO] Loading initial frame...")
-    init_img = Image.open('data/0.png').convert('RGB')
+    init_img = Image.open('random_test/0.png').convert('RGB')
     init_frame_np = np.array(init_img, dtype=np.float32) / 255.0
     current_frame = torch.from_numpy(init_frame_np).permute(2, 0, 1).unsqueeze(0).to(device)
     
@@ -87,7 +115,17 @@ def main():
     last2_frames = [current_frame.clone(), current_frame.clone()]
     
     # Action mapping
-    action_names = ['NOOP', 'FIRE', 'RIGHT', 'LEFT']
+    # action_names = ['NOOP', 'FIRE', 'RIGHT', 'LEFT']
+    # --- before main() ---------------------------------------------------
+    action_names = [
+        "NOOP", "FIRE", "UP", "RIGHT", "LEFT", "DOWN",
+        "UPRIGHT", "UPLEFT", "DOWNRIGHT", "DOWNLEFT",
+        "UPFIRE", "RIGHTFIRE", "LEFTFIRE", "DOWNFIRE",
+        "UPRIGHTFIRE", "UPLEFTFIRE", "DOWNRIGHTFIRE", "DOWNLEFTFIRE"
+    ]
+    N_ACTIONS = len(action_names) 
+
+
     key_to_action = {
         pygame.K_PERIOD: 0,  # NOOP
         pygame.K_SPACE: 1,   # FIRE
@@ -102,22 +140,24 @@ def main():
     step = 0
     
     # Display the key mappings at the start
-    print("\nNeural Breakout Controls:")
-    print("------------------------")
-    print("SPACE - Fire")
-    print("LEFT ARROW - Move Left")
-    print("RIGHT ARROW - Move Right")
-    print(". (PERIOD) - No Operation")
-    print("ESC or Q - Quit\n")
+    # print("\nNeural Breakout Controls:")
+    # print("------------------------")
+    # print("SPACE - Fire")
+    # print("LEFT ARROW - Move Left")
+    # print("RIGHT ARROW - Move Right")
+    # print(". (PERIOD) - No Operation")
+    # print("ESC or Q - Quit\n")
     
     # Main game loop
     running = True
     while running:
         # Default to NOOP (0) each frame
         action_idx = 0
+        # print(action_idx)
         
         # Process events
         for event in pygame.event.get():
+            # print('F')
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
@@ -129,19 +169,23 @@ def main():
                     action_idx = key_to_action[event.key]
         
         # Check currently pressed keys (for continuous input)
+        # keys = pygame.key.get_pressed()
+        # if keys[pygame.K_SPACE]:
+        #     action_idx = 1  # FIRE
+        #     last_displayed_action = "FIRE"
+        # elif keys[pygame.K_RIGHT]:
+        #     action_idx = 2  # RIGHT
+        #     last_displayed_action = "RIGHT"
+        # elif keys[pygame.K_LEFT]:
+        #     action_idx = 3  # LEFT
+        #     last_displayed_action = "LEFT"
+        # elif keys[pygame.K_PERIOD]:
+        #     action_idx = 0  # NOOP (explicitly)
+        #     last_displayed_action = "NOOP"
         keys = pygame.key.get_pressed()
-        if keys[pygame.K_SPACE]:
-            action_idx = 1  # FIRE
-            last_displayed_action = "FIRE"
-        elif keys[pygame.K_RIGHT]:
-            action_idx = 2  # RIGHT
-            last_displayed_action = "RIGHT"
-        elif keys[pygame.K_LEFT]:
-            action_idx = 3  # LEFT
-            last_displayed_action = "LEFT"
-        elif keys[pygame.K_PERIOD]:
-            action_idx = 0  # NOOP (explicitly)
-            last_displayed_action = "NOOP"
+        # print(keys)
+        action_idx = key_combo_to_action(keys)          # ← single call
+        last_displayed_action = action_names[action_idx]
         
         # Only print non-NOOP actions to console
         if action_idx != 0:
@@ -153,8 +197,8 @@ def main():
             stacked_frames = torch.cat([last2_frames[0], last2_frames[1]], dim=1)
             
             # Get action prediction
-            onehot = action_to_onehot(action_idx, device)
-            logits = action_model(onehot, stacked_frames)
+            onehot = action_to_onehot(action_idx, N_ACTIONS, device)
+            logits = action_model(onehot)
             indices = action_model.sample_latents(logits, temperature=args.temperature)
             
             # Reshape indices and get embeddings
