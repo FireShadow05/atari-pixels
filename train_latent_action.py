@@ -344,7 +344,7 @@ def train(args):
     print("-----------------------")
 
     # Model
-    model = LatentActionVQVAE()
+    model = LatentActionVQVAE(codebook_size=512, embedding_dim=256)
     model = model.to(device)
     # Conditionally compile the model
     if compile_mode is not None:
@@ -384,10 +384,12 @@ def train(args):
             #rec_loss = F.mse_loss(recon, frame_tp1)
             frame_diff = torch.abs(frame_tp1 - frame_t)
             motion_weight = 1.0 + 10.0 * (frame_diff.sum(dim=1, keepdim=True) > 0.05).float()
+            print(frame_tp1.shape)
+            print(recon.shape)
             rec_loss = (motion_weight * (recon - frame_tp1)**2).mean()
 
             # Entropy regularization
-            entropy, hist = codebook_entropy(indices, 256)
+            entropy, hist = codebook_entropy(indices, 512)
             entropy_reg = -args.entropy_weight * entropy
             loss = rec_loss + commit_loss + codebook_loss + entropy_reg
         if scaler is not None:
@@ -431,7 +433,9 @@ def train(args):
         # Save reconstructions
         if (global_step + 1) % args.recon_interval == 0:
             with torch.no_grad():
+                print(frame_t)
                 grid = make_grid(torch.cat([frame_t, frame_tp1, recon], dim=0), nrow=args.batch_size)
+                print(grid)
                 wandb.log({'reconstructions': [wandb.Image(grid, caption=f'Step {global_step+1}')]}, step=global_step+1)
         # Codebook reset
         if (global_step + 1) % args.codebook_reset_interval == 0:
@@ -506,7 +510,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_dir', type=str, default='checkpoints', help='Checkpoint directory')
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('--max_iters', type=int, default=10000)
+    parser.add_argument('--max_iters', type=int, default=30000)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--lr_min', type=float, default=1e-4)
     parser.add_argument('--grad_accum', type=int, default=1)

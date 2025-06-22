@@ -79,9 +79,9 @@ class ActionLatentPairDataset(Dataset):
     def __init__(self, json_path):
         with open(json_path, 'r') as f:
             self.data = json.load(f)
-        self.num_classes = 4
-        self.latent_dim = 35
-        self.codebook_size = 256
+        self.num_classes = 18
+        self.latent_dim = 80
+        self.codebook_size = 512
 
     def __len__(self):
         return len(self.data)
@@ -100,9 +100,9 @@ class ActionStateLatentTripleDataset(Dataset):
     def __init__(self, json_path):
         with open(json_path, 'r') as f:
             self.data = json.load(f)
-        self.num_classes = 4
-        self.latent_dim = 35
-        self.codebook_size = 256
+        self.num_classes = 18
+        self.latent_dim = 80
+        self.codebook_size = 512
 
     def __len__(self):
         return len(self.data)
@@ -128,9 +128,9 @@ class ActionStateLatentTripleNPZDataset(Dataset):
         self.actions = data['actions']  # (N,)
         self.frames = data['frames']    # (N, 6, 210, 160)
         self.latents = data['latents']  # (N, 35)
-        self.num_classes = 4
-        self.latent_dim = 35
-        self.codebook_size = 256
+        self.num_classes = 18
+        self.latent_dim = 80
+        self.codebook_size = 512
 
     def __len__(self):
         return len(self.actions)

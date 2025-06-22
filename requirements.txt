@@ -1,18 +1,17 @@
 # Core dependencies
-pytest
+pytest==7.4.4
 # Gymnasium with Atari and ROM auto-acceptance (installs AutoROM and ROMs)
-gymnasium[atari,accept-rom-license]
+gymnasium[atari,accept-rom-license]==0.29.1
 torch
 torchvision
 pillow
-numpy
 opencv-python
-wandb
+wandb==0.16.3
 # For progress bars
 tqdm
 matplotlib
-imageio
+imageio==2.37.0
 imageio[ffmpeg]
-pygame
-ale-py
+pygame==2.6.1
+ale-py==0.8.1
 AutoROM.accept-rom-license  # This automatically accepts Atari ROM license 

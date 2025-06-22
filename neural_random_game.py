@@ -19,7 +19,7 @@ device = get_device()
 print(f"[DEBUG] Using device: {device}")
 
 # --- Load initial frame ---
-init_img = Image.open('data/0.png').convert('RGB')
+init_img = Image.open('/teamspace/studios/this_studio/atari-pixels/data/bulk_videos/bulk_trained_agent_latest_29/89.png').convert('RGB')
 init_frame = np.array(init_img, dtype=np.float32) / 255.0  # (210, 160, 3), [0,1]
 print(f"[DEBUG] Loaded initial frame shape (np): {init_frame.shape}")
 init_frame = torch.from_numpy(init_frame).permute(2, 0, 1).unsqueeze(0).to(device)  # (1, 3, 210, 160)
@@ -41,7 +41,7 @@ print(f"[DEBUG] Loaded world model. VQ codebook shape: {world_model.vq.embedding
 
 
 def action_to_onehot(action_idx, device):
-    onehot = torch.zeros(1, 4, device=device)
+    onehot = torch.zeros(1, 18, device=device)
     onehot[0, action_idx] = 1.0
     return onehot
 
@@ -55,12 +55,20 @@ def main():
     # --- Load action-to-latent model ---
     if args.with_frames:
         print("[INFO] Using ActionStateToLatentMLP (action + last 2 frames)")
-        model = ActionStateToLatentMLP().to(device)
+        model = model = ActionStateToLatentMLP(
+            action_dim=18,
+            latent_dim=80,
+            codebook_size=512,      # ← keep in sync
+        ).to(device)
         ckpt = torch.load('checkpoints/latent_action/action_state_to_latent_best.pt', map_location=device)
-        model.load_state_dict(ckpt['model_state_dict'])
+        model.load_state_dict(ckpt['model_state_dict'], strict=False)
     else:
         print("[INFO] Using ActionToLatentMLP (action only)")
-        model = ActionToLatentMLP().to(device)
+        model = ActionToLatentMLP(
+            input_dim=18,
+            latent_dim=80,
+            codebook_size=512,      # ← must match VQ codebook
+        ).to(device)
         ckpt = torch.load('checkpoints/latent_action/action_to_latent_best.pt', map_location=device)
         # Fix state dict keys by removing the '_orig_mod.' prefix if present
         fixed_state_dict = {}
@@ -74,7 +82,12 @@ def main():
     if device.type == 'cuda':
         model = torch.compile(model)
 
-    action_names = ['NOOP', 'FIRE', 'RIGHT', 'LEFT']
+    action_names = [
+        "NOOP", "FIRE", "UP", "RIGHT", "LEFT", "DOWN",
+        "UPRIGHT", "UPLEFT", "DOWNRIGHT", "DOWNLEFT",
+        "UPFIRE", "RIGHTFIRE", "LEFTFIRE", "DOWNFIRE",
+        "UPRIGHTFIRE", "UPLEFTFIRE", "DOWNRIGHTFIRE", "DOWNLEFTFIRE"
+    ]
     frames = []
     current_frame = init_frame.clone()
     current_frame_for_frame = (current_frame.squeeze(0).cpu().numpy().transpose(1, 2, 0) * 255.0).clip(0, 255).astype(np.uint8)
@@ -87,7 +100,7 @@ def main():
     
     for step in range(args.steps):
         print(f"\n[DEBUG] === Step {step} ===")
-        action_idx = random.randint(0, 3)
+        action_idx = random.randint(0, 17)
         print(f"[DEBUG] Random action: {action_idx} ({action_names[action_idx]})")
         with torch.no_grad():
             if args.with_frames:
@@ -107,11 +120,11 @@ def main():
                 changes = (all_latent_indices[-1] != all_latent_indices[-2]).sum()
                 print(f"Step {step}: {changes} latent positions changed")
                 
-            indices = indices.view(1, 5, 7)
+            indices = indices.view(1, 8, 10)
             embeddings = world_model.vq.embeddings
             indices = indices.to(embeddings.weight.device)
-            quantized = embeddings(indices)  # (1, 5, 7, 128)
-            quantized = quantized.permute(0, 3, 1, 2).contiguous()  # (1, 128, 5, 7)
+            quantized = embeddings(indices)  # (1, 8, 10, 128)
+            quantized = quantized.permute(0, 3, 1, 2).contiguous()  # (1, 128, 8, 10)
             # Frame for decoder
             frame_in = current_frame.permute(0, 1, 3, 2)  # (1, 3, 210, 160) -> (1, 3, 160, 210)
             quantized = quantized.to(next(world_model.parameters()).device)
@@ -192,7 +205,7 @@ def visualize_ground_truth_comparison(
         return tensor
     
     def action_to_onehot(action_idx):
-        onehot = torch.zeros(1, 4, device=device)
+        onehot = torch.zeros(1, 18, device=device)
         onehot[0, action_idx] = 1.0
         return onehot
     
@@ -210,7 +223,7 @@ def visualize_ground_truth_comparison(
             z = world_model.encoder(x)
             _, indices, _, _ = world_model.vq(z)
         
-        return indices.view(1, 5, 7), z
+        return indices.view(1, 8, 10), z
     
     # Initial setup
     current_pred_frame = load_frame(gt_frame_paths[0])
@@ -237,7 +250,7 @@ def visualize_ground_truth_comparison(
             pred_latent_indices = action_to_latent.sample_latents(logits, temperature=temperature)
             
         # Decoder for both latents
-        pred_latent_indices_reshaped = pred_latent_indices.view(1, 5, 7)
+        pred_latent_indices_reshaped = pred_latent_indices.view(1, 8, 10)
         embeddings = world_model.vq.embeddings
         
         # Ground truth latent -> decoded frame
@@ -285,7 +298,7 @@ def visualize_ground_truth_comparison(
         axes[0, 1].axis('off')
         
         # Show ground truth latent
-        gt_latent_grid = gt_latent_indices.cpu().numpy().reshape(5, 7)
+        gt_latent_grid = gt_latent_indices.cpu().numpy().reshape(8, 10)
         im1 = axes[0, 2].imshow(gt_latent_grid, cmap='viridis')
         axes[0, 2].set_title('Ground Truth Latent')
         plt.colorbar(im1, ax=axes[0, 2])
@@ -300,7 +313,7 @@ def visualize_ground_truth_comparison(
         axes[1, 1].axis('off')
         
         # Show predicted latent and differences
-        pred_latent_grid = pred_latent_indices.cpu().numpy().reshape(5, 7)
+        pred_latent_grid = pred_latent_indices.cpu().numpy().reshape(8, 10)
         im2 = axes[1, 2].imshow(pred_latent_grid, cmap='viridis')
         axes[1, 2].set_title('Predicted Latent')
         plt.colorbar(im2, ax=axes[1, 2])
@@ -357,7 +370,7 @@ def visualize_latent_changes(
     
     # Helper function
     def action_to_onehot(action_idx):
-        onehot = torch.zeros(1, 4, device=device)
+        onehot = torch.zeros(1, 18, device=device)
         onehot[0, action_idx] = 1.0
         return onehot
     
@@ -372,7 +385,7 @@ def visualize_latent_changes(
             else:
                 logits = action_to_latent(onehot)
             indices = action_to_latent.sample_latents(logits, temperature=temperature)
-        indices = indices.view(1, 5, 7)
+        indices = indices.view(1, 8, 10)
         embeddings = world_model.vq.embeddings
         indices = indices.to(embeddings.weight.device)
         quantized = embeddings(indices)
@@ -388,7 +401,7 @@ def visualize_latent_changes(
         latent, latent_indices = map_action_to_latent_embedding(action_idx)
         
         # Reshape latent to 5x7 grid for visualization
-        latent_grid = latent_indices.view(5, 7).cpu().numpy()
+        latent_grid = latent_indices.view(8, 10).cpu().numpy()
         
         with torch.no_grad():
             frame_in = current_frame.permute(0, 1, 3, 2)  # (1, 3, 210, 160) -> (1, 3, 160, 210)
@@ -459,7 +472,7 @@ def visualize_latent_changes(
                         axes[1, 2].text(j, i, f'{prev_latent[i,j]}->{latent_grid[i,j]}', 
                                      ha='center', va='center', color='black', fontsize=7)
         else:
-            axes[1, 2].imshow(np.ones((5, 7)), cmap='Greys')
+            axes[1, 2].imshow(np.ones((8, 10)), cmap='Greys')
             axes[1, 2].set_title('Initial Frame (No Changes)')
         
         # Add colorbar for latent codes

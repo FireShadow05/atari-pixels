@@ -10,9 +10,9 @@ from latent_action_model import ActionToLatentMLP, ActionStateToLatentMLP
 from latent_action_data import get_action_latent_dataloaders, get_action_state_latent_dataloaders
 
 # Hyperparameters
-BATCH_SIZE = 256
-LEARNING_RATE = 1e-3
-EPOCHS = 250
+BATCH_SIZE = 2048
+LEARNING_RATE = 1e-4
+EPOCHS = 100
 GRAD_CLIP = 1.0
 CHECKPOINT_DIR = 'checkpoints/latent_action/'
 MODEL_NAME = 'action_to_latent_best.pt'
@@ -57,7 +57,8 @@ def train_one_epoch(model, loader, criterion, optimizer, device, scaler=None, wi
                 logits = model(actions, frames)
             else:
                 logits = model(actions)
-            loss = criterion(logits.view(-1, 256), latents.view(-1))
+            # print(latents.shape)
+            loss = criterion(logits.view(-1, 512), latents.view(-1))
         if scaler:
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
@@ -96,7 +97,7 @@ def eval_one_epoch(model, loader, criterion, device, with_frames=False):
                 logits = model(actions, frames)
             else:
                 logits = model(actions)
-            loss = criterion(logits.view(-1, 256), latents.view(-1))
+            loss = criterion(logits.view(-1, 512), latents.view(-1))
             running_loss += loss.item() * actions.size(0)
             preds = logits.argmax(dim=-1)
             correct += (preds == latents).sum().item()
@@ -127,11 +128,20 @@ def main():
     # Data
     if args.with_frames:
         train_loader, val_loader = get_action_state_latent_dataloaders(batch_size=BATCH_SIZE)
-        model = ActionStateToLatentMLP()
+        model = ActionStateToLatentMLP(
+            action_dim=18,
+            latent_dim=80,
+            codebook_size=512,      # ← keep in sync
+        )
         model_name = 'action_state_to_latent_best.pt'
     else:
         train_loader, val_loader = get_action_latent_dataloaders(batch_size=BATCH_SIZE)
-        model = ActionToLatentMLP()
+        model = ActionToLatentMLP(
+            input_dim=18,
+            latent_dim=80,
+            codebook_size=512,      # ← must match VQ codebook
+        )
+
         model_name = 'action_to_latent_best.pt'
     model = model.to(device)
     if device.type == 'cuda':

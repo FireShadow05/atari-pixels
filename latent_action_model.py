@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def load_latent_action_model(model_path, device):
-    model = LatentActionVQVAE()
+    model = LatentActionVQVAE(codebook_size=512, embedding_dim=256)
     checkpoint = torch.load(model_path, map_location=device)
     # Fix state dict keys by removing the '*orig*mod.' prefix
     fixed_state_dict = {}
@@ -15,51 +15,68 @@ def load_latent_action_model(model_path, device):
     model.load_state_dict(fixed_state_dict)
     return model, checkpoint['step']
 
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                               stride=stride, padding=1, bias=False)
+        self.bn1   = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                               stride=1, padding=1, bias=False)
+        self.bn2   = nn.BatchNorm2d(out_channels)
+        self.relu  = nn.ReLU(inplace=True)
+
+        if stride != 1 or in_channels != out_channels:
+            self.downsample = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels,
+                          kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+        else:
+            self.downsample = nn.Identity()
+
+    def forward(self, x):
+        identity = self.downsample(x)
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        out += identity
+        return self.relu(out)
+
+
+# ── 2) Updated Encoder ───────────────────────────────────────────────────────────────
 class Encoder(nn.Module):
-    """
-    Encoder for VQ-VAE latent action model.
-    - Input: Concatenated current and next frames (B, 6, 160, 210) for RGB, or (B, 2, 160, 210) for grayscale.
-    - Output: Latent feature map (B, 128, 5, 7)
-
-    The architecture uses 5 Conv2d layers with stride=2 to downsample the input.
-    The kernel sizes and paddings are chosen to ensure the final output spatial size is exactly (5, 7) for input (160, 210).
-
-    Downsampling calculation for (H, W) = (160, 210):
-    Layer 1: (160, 210) -> (80, 105)
-    Layer 2: (80, 105) -> (40, 53)
-    Layer 3: (40, 53) -> (20, 27)
-    Layer 4: (20, 27) -> (10, 14)
-    Layer 5: (10, 14) -> (5, 7)
-
-    The last Conv2d uses kernel_size=(4,7), stride=2, padding=(1,3) to ensure the width is exactly 7 (see calculation below):
-        output_width = floor((input_width + 2*padding - kernel_size) / stride) + 1
-        For input_width=14, kernel_size=7, padding=3, stride=2:
-        output_width = floor((14 + 6 - 7) / 2) + 1 = floor(13/2) + 1 = 6 + 1 = 7
-    """
-    def __init__(self, in_channels=6, hidden_dims=[64, 128, 256, 512, 512], out_dim=128):
+    def __init__(self,
+                 in_channels=6,
+                 hidden_dims=[64, 128, 256, 512],
+                 out_dim=256):
         super().__init__()
         layers = []
         c_in = in_channels
-        for i, c_out in enumerate(hidden_dims):
-            if i < 4:
-                # Standard downsampling: kernel=4, stride=2, padding=1
-                # This halves the spatial size each time
-                layers.append(nn.Conv2d(c_in, c_out, kernel_size=4, stride=2, padding=1))
-            else:
-                # Last layer: custom kernel for width to get (5, 7) output
-                # kernel_size=(4,7), stride=2, padding=(1,3)
-                # See docstring for calculation
-                layers.append(nn.Conv2d(c_in, c_out, kernel_size=(4,7), stride=2, padding=(1,3)))
-            layers.append(nn.BatchNorm2d(c_out))
-            layers.append(nn.ReLU(inplace=True))
+        for c_out in hidden_dims:
+            layers.append(nn.Sequential(
+                nn.Conv2d(c_in, c_out,
+                          kernel_size=4, stride=2, padding=1, bias=False),
+                nn.BatchNorm2d(c_out),
+                nn.ReLU(inplace=True),
+                ResBlock(c_out, c_out)       # add residual block
+            ))
             c_in = c_out
-        self.conv = nn.Sequential(*layers)
-        # Project to latent embedding dimension (128)
-        self.project = nn.Conv2d(hidden_dims[-1], out_dim, kernel_size=1)
+
+        self.conv    = nn.Sequential(*layers)
+        self.project = nn.Conv2d(hidden_dims[-1], out_dim,
+                                 kernel_size=1, bias=False)
+
     def forward(self, x):
-        x = self.conv(x)
-        x = self.project(x)
-        return x  # (B, 128, 5, 7)
+        # x: (B, 6, 128, 160)
+        x = self.conv(x)           # → (B, hidden_dims[-1]=512, 8, 10)
+        x = self.project(x)        # → (B, out_dim=256,       8, 10)
+        return x
 
 class VectorQuantizer(nn.Module):
     """
@@ -95,53 +112,64 @@ class VectorQuantizer(nn.Module):
         return quantized, encoding_indices.view(z.shape[0], z.shape[2], z.shape[3]), commitment_loss, codebook_loss
 
 class Decoder(nn.Module):
-    """
-    Decoder for VQ-VAE latent action model.
-    - Input: Quantized latent (B, 128, 5, 7) and current frame (B, 3, 160, 210)
-    - Output: Reconstructed next frame (B, 3, 160, 210)
-
-    The decoder upsamples the latent representation back to the original frame size using 5 transposed conv layers.
-    - The upsampling path is symmetric to the encoder, but due to rounding, the output may not be exactly (160, 210).
-    - To guarantee the output is (160, 210), we use F.interpolate at the end.
-
-    Conditioning:
-    - The current frame is processed through a small conv net and concatenated with the latent before upsampling (FiLM-style conditioning).
-    - No skip connections are used (to enforce information bottleneck).
-    """
-    def __init__(self, in_channels=128, cond_channels=3, hidden_dims=[512, 512, 256, 128, 64], out_channels=3):
+    def __init__(self,
+                 in_channels=256,
+                 cond_channels=3,
+                 hidden_dims=[512, 512, 256, 128, 64],
+                 out_channels=3):
         super().__init__()
-        # Process current frame for conditioning
+        # process current frame
         self.cond_conv = nn.Sequential(
-            nn.Conv2d(cond_channels, 64, kernel_size=3, padding=1),
+            nn.Conv2d(cond_channels, 64, kernel_size=3, padding=1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            ResBlock(64, 64),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
             nn.ReLU(inplace=True),
+            ResBlock(128, 128),
         )
-        # Combine latent and conditioning
-        self.fc = nn.Conv2d(in_channels+128, hidden_dims[0], kernel_size=1)
-        up_layers = []
+
+        self.fc = nn.Conv2d(in_channels + 128,
+                            hidden_dims[0],
+                            kernel_size=1,
+                            bias=False)
+
+        up_blocks = []
         c_in = hidden_dims[0]
         for c_out in hidden_dims[1:]:
-            # Standard upsampling: kernel=4, stride=2, padding=1
-            up_layers.append(nn.ConvTranspose2d(c_in, c_out, kernel_size=4, stride=2, padding=1))
-            up_layers.append(nn.BatchNorm2d(c_out))
-            up_layers.append(nn.ReLU(inplace=True))
+            up_blocks.append(nn.Sequential(
+                nn.ConvTranspose2d(c_in, c_out,
+                                   kernel_size=4, stride=2, padding=1,
+                                   bias=False),
+                nn.BatchNorm2d(c_out),
+                nn.ReLU(inplace=True),
+                ResBlock(c_out, c_out)
+            ))
             c_in = c_out
-        # Final upsampling to get close to (160, 210)
-        up_layers.append(nn.ConvTranspose2d(c_in, out_channels, kernel_size=4, stride=2, padding=1))
-        self.up = nn.Sequential(*up_layers)
+
+        # final upsample
+        up_blocks.append(nn.Sequential(
+            nn.ConvTranspose2d(c_in, out_channels,
+                               kernel_size=4, stride=2, padding=1,
+                               bias=False),
+            ResBlock(out_channels, out_channels)
+        ))
+
+        self.up = nn.Sequential(*up_blocks)
+
     def forward(self, z, cond):
-        # Process conditioning frame
+        # z: (B,256, 8,10), cond: (B,3,128,160)
         cond_feat = self.cond_conv(cond)
-        # Resize conditioning to match latent spatial size
-        cond_feat = F.interpolate(cond_feat, size=z.shape[2:], mode='bilinear', align_corners=False)
-        # Concatenate and upsample
+        cond_feat = F.interpolate(
+            cond_feat, size=z.shape[2:], mode='bilinear', align_corners=False)
+
         x = torch.cat([z, cond_feat], dim=1)
         x = self.fc(x)
         x = self.up(x)
-        # Guarantee output is (B, 3, 160, 210) by resizing
-        x = F.interpolate(x, size=(160, 210), mode='bilinear', align_corners=False)
+        # force to exactly 128×160
+        x = F.interpolate(x, size=(128,160),
+                          mode='bilinear', align_corners=False)
         return x
+
 
 class LatentActionVQVAE(nn.Module):
     """
@@ -181,7 +209,7 @@ class LatentActionVQVAE(nn.Module):
             return recon, indices, commitment_loss, codebook_loss
 
 class ActionToLatentMLP(nn.Module):
-    def __init__(self, input_dim=4, hidden1=512, hidden2=256, latent_dim=35, codebook_size=256, dropout=0.2):
+    def __init__(self, input_dim=18, hidden1=512, hidden2=256, latent_dim=35, codebook_size=256, dropout=0.2):
         super().__init__()
         self.latent_dim = latent_dim
         self.codebook_size = codebook_size
@@ -211,44 +239,83 @@ class ActionToLatentMLP(nn.Module):
         return samples
 
 class ActionStateToLatentMLP(nn.Module):
-    def __init__(self, action_dim=4, hidden1=512, hidden2=256, latent_dim=35, codebook_size=256, dropout=0.2):
+    """
+    Predict VQ-VAE latent indices from an action one-hot vector and the
+    concatenated (current + next) RGB frames sized 128 × 160.
+
+    Output shape: (B, latent_dim=80, codebook_size)
+    """
+    def __init__(
+        self,
+        action_dim    = 4,
+        hidden1       = 512,
+        hidden2       = 256,
+        latent_dim    = 80,   # 8 × 10
+        codebook_size = 256,
+        dropout       = 0.2,
+    ):
         super().__init__()
-        self.latent_dim = latent_dim
+        self.latent_dim    = latent_dim
         self.codebook_size = codebook_size
-        # Frame encoder for 2 RGB frames (6 channels, 210x160)
+
+        # ── helpers ────────────────────────────────────────────────
+        def conv_bn_relu(c_in, c_out, k, s, p):
+            return nn.Sequential(
+                nn.Conv2d(c_in, c_out, k, s, p, bias=False),
+                nn.BatchNorm2d(c_out),
+                nn.ReLU(inplace=True),
+            )
+
+        class ResUnit(nn.Module):
+            def __init__(self, c):
+                super().__init__()
+                self.block = nn.Sequential(
+                    nn.Conv2d(c, c, 3, 1, 1, bias=False),
+                    nn.BatchNorm2d(c),
+                    nn.ReLU(inplace=True),
+                    nn.Conv2d(c, c, 3, 1, 1, bias=False),
+                    nn.BatchNorm2d(c),
+                )
+                self.relu = nn.ReLU(inplace=True)
+            def forward(self, x):  # residual + ReLU
+                return self.relu(x + self.block(x))
+
+        # ── frame encoder (6 → 32 → 64 → 128 → 128) ───────────────
+        # input: (B, 6, 128, 160)
         self.frame_encoder = nn.Sequential(
-            nn.Conv2d(6, 16, kernel_size=8, stride=4),  # (B, 16, 51, 39)
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=2),  # (B, 32, 24, 18)
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2),  # (B, 64, 11, 8)
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(64 * 11 * 8, 128),
-            nn.ReLU(),
-        )
-        # Combined MLP for action + frame features
-        self.net = nn.Sequential(
-            nn.Linear(action_dim + 128, hidden1),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden1, hidden2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden2, latent_dim * codebook_size)
+            conv_bn_relu(6,   32, 4, 2, 1),  ResUnit(32),   # → (B,32, 64,  80)
+            conv_bn_relu(32,  64, 4, 2, 1),  ResUnit(64),   # → (B,64, 32,  40)
+            conv_bn_relu(64, 128, 4, 2, 1),  ResUnit(128),  # → (B,128,16,  20)
+            conv_bn_relu(128,128, 3, 2, 1),  ResUnit(128),  # → (B,128, 8,  10)
+            nn.Flatten(),                                   # 128 × 8 × 10 = 10240
+            nn.Linear(128 * 8 * 10, 128), nn.ReLU(inplace=True),
         )
 
-    def forward(self, action, frames):
-        # action: (B, 4), frames: (B, 6, 210, 160)
-        frame_features = self.frame_encoder(frames)
-        combined = torch.cat([action, frame_features], dim=1)
-        out = self.net(combined)
-        return out.view(-1, self.latent_dim, self.codebook_size)
+        # ── fusion MLP ─────────────────────────────────────────────
+        self.net = nn.Sequential(
+            nn.Linear(action_dim + 128, hidden1), nn.ReLU(inplace=True), nn.Dropout(dropout),
+            nn.Linear(hidden1,          hidden2), nn.ReLU(inplace=True), nn.Dropout(dropout),
+            nn.Linear(hidden2, latent_dim * codebook_size),
+        )
+
+    # ------------------------------------------------------------------
+    def forward(self, action_onehot, frames_cat):
+        """
+        action_onehot : (B, action_dim)
+        frames_cat    : (B, 6, 128, 160)  ← frame_t || frame_tp1
+        returns       : logits (B, latent_dim, codebook_size)
+        """
+        f_feat = self.frame_encoder(frames_cat)          # (B,128)
+        fused  = torch.cat([action_onehot, f_feat], dim=1)
+        logits = self.net(fused).view(-1, self.latent_dim, self.codebook_size)
+        return logits
 
     def sample_latents(self, logits, temperature=1.0):
+        # logits: (batch, 35, 256)
         if temperature <= 0:
             raise ValueError("Temperature must be > 0")
-        probs = F.softmax(logits / temperature, dim=-1)
+        probs = F.softmax(logits / temperature, dim=-1)  # (batch, 35, 256)
         batch, latent_dim, codebook_size = probs.shape
+        # Sample for each position
         samples = torch.multinomial(probs.view(-1, codebook_size), 1).view(batch, latent_dim)
         return samples

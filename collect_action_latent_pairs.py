@@ -32,6 +32,18 @@ from tqdm import tqdm
 from atari_env import AtariBreakoutEnv
 from random_agent import RandomAgent
 from latent_action_model import load_latent_action_model
+import torch.nn.functional as F
+
+import torch.nn.functional as F   # already imported, just for clarity
+
+def resize_frame(t, h=128, w=160):
+    """
+    t: (3, H, W) float-tensor in [0,1]
+    returns (3, h, w)
+    """
+    return F.interpolate(t.unsqueeze(0), size=(h, w),
+                         mode='bilinear', align_corners=False).squeeze(0)
+
 
 def get_device():
     if torch.cuda.is_available():
@@ -78,16 +90,20 @@ def collect_action_latent_pairs(
         while len(collected) < n_pairs:
             obs, _ = env.reset()
             frame_t = torch.from_numpy(obs).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+            frame_t   = resize_frame(frame_t) 
             done = False
             steps = 0
             while not done and steps < max_steps_per_episode and len(collected) < n_pairs:
                 action = agent.select_action()
                 next_obs, reward, terminated, truncated, info = env.step(action)
                 frame_tp1 = torch.from_numpy(next_obs).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+                frame_tp1 = resize_frame(frame_tp1)  
                 try:
                     with torch.no_grad():
                         frame_t = frame_t.to(device)
                         frame_tp1 = frame_tp1.to(device)
+                        frame_t   = F.interpolate(frame_t,   size=(128,160), mode='bilinear', align_corners=False)
+                        frame_tp1 = F.interpolate(frame_tp1, size=(128,160), mode='bilinear', align_corners=False)
                         _, indices, *_ = model(frame_t, frame_tp1)
                 except Exception as e:
                     print(f"Error during model call: {e}")
@@ -150,6 +166,7 @@ def collect_action_state_latent_triples(
             # Add this line to flip the channels to match VQ-VAE training format
             obs = obs[:, :, ::-1].copy()  # Swap BGR -> RGB to match PNG format
             frame_t = torch.from_numpy(obs).float().permute(2, 0, 1) / 255.0  # (3, 210, 160)
+            frame_t   = resize_frame(frame_t) 
             last2_frames = [frame_t.clone(), frame_t.clone()]
             done = False
             steps = 0
@@ -159,6 +176,7 @@ def collect_action_state_latent_triples(
                 # Also swap channels for next_obs
                 next_obs = next_obs[:, :, ::-1].copy()  # Swap BGR -> RGB
                 frame_tp1 = torch.from_numpy(next_obs).float().permute(2, 0, 1) / 255.0
+                frame_tp1   = resize_frame(frame_tp1) 
                 stacked_frames = torch.cat(last2_frames, dim=0)
                 try:
                     with torch.no_grad():
@@ -203,7 +221,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description='Collect (action, latent_code) pairs or (action, frames, latent_code) triples for latent action mapping.')
     parser.add_argument('--out', type=str, default='data/actions/action_latent_pairs.json')
-    parser.add_argument('--n_pairs', type=int, default=100_000)
+    parser.add_argument('--n_pairs', type=int, default=24000)
     parser.add_argument('--max_steps_per_episode', type=int, default=1000)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--with_frames', action='store_true', help='Store (action, frames, latent_code) triples for action+state-to-latent training')
