@@ -1,5 +1,8 @@
+### Neural Pitfall
+![Neural Game Comparison](pitfall_examples/neural_random_game_trained_random_agent.gif)
+
 ### What did I do?
-I extended this repo's code for Atari's pitfall game. The main reason to choose this game was because It had a timer included, as was mentioned in the additional follow-up task and since it was already a Atari Game hence setting up the environment was relatively straightforward which gave me more time to focus on the architecture and general improvement of the overall pipeline. At the very end I also tried incorporating time embeddings and working on an architecture that could predict the next action given the current state (detailed this below of why I tried this). But due to time constraint I was unable to properly try this aspect.
+I extended this repo's code for Atari's pitfall game. The main reason to choose this game was because It had a timer included, as was mentioned in the additional follow-up task and since it was already a Atari Game hence setting up the environment was relatively straightforward which gave me more time to focus on the architecture and general improvement of the overall pipeline. At the very end I also tried incorporating time embeddings and working on an architecture that could predict the next action given the current state (detailed this below of why I tried this). But due to time constraint I was unable to properly try this aspect. Also the current VQVAE architecture is working pretty good but the LatentMLPs aren't the best hence the model isn't working that good, this part needs improvement.
 
 ### Major Challenges that I faced
 The major challenge was in the training of the VQVAE itself. The existing architecture failed to capture the character in the reconstruction process. To fix this I simply added residual connections and changed the dimensions of the latent to 8*10 from 5*7. Apart from the changes in the VQVAE, I did similar additions to the StateActiontoLatent model.  
@@ -12,9 +15,6 @@ Without any time embeddings or any external signal of time, after a certain poin
 
 ### Residuals Help in Capturing the Character
 ![Residuals Help in Capturing the Character](pitfall_examples/improved_model.png)
-
-### Neural Game Comparison: Trained vs Random Agent
-![Neural Game Comparison](pitfall_examples/neural_random_game_trained_random_agent.gif)
 
 ### Example Run
 
