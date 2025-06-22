@@ -135,3 +135,5 @@ See [part5.md](part5.md) for full details, implementation, and next steps.
 - Train the latent action model for much longer to achieve convergence
 - Collect much more data for action → latent code mapping
 - Try with different Atari games
+
+

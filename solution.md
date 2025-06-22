@@ -7,6 +7,18 @@ The major challenge was in the training of the VQVAE itself. The existing archit
 ### On the follow up:
 Without any time embeddings or any external signal of time, after a certain point the time remains same or oscillates between a certain value. I observed this in the case of pitfall. But I hypothesize this could change if we train it the latentMLP models on a single agent's data and then repeat the same set of actions during inference then the time might decrease. Obv. the previous one is not a fix for the issue. A proper fix would include ntroducing time embeddings as well in the current architecture. 
 
+### Failure Example of Previous Models!
+![Failure Example of Previous Models!](pitfall_examples/missing_character.png)
+
+### Residuals Help in Capturing the Character
+![Residuals Help in Capturing the Character](pitfall_examples/improved_model.png)
+
+### Neural Game Comparison: Trained vs Random Agent
+![Neural Game Comparison](pitfall_examples/neural_random_game_trained_random_agent.gif)
+
+### Example Run
+
+
 ### Why did you pick the particular project?
 Compared to the other projects I found this to be the most interesting and the most new one for me. I had relatively less domain knowledge for this project compared to the other projects and I also wanted to explore world models from a long time so yeah this seemed to be the right starting point.
 
@@ -21,3 +33,6 @@ I would have focused on making the architecture more general and much larger so 
 
 ### If you had to write a paper on the project, what else needs to be done?
 As already mentioned I would like to extend it to create a generalized architeccture that can create any atari game and also at the same time Instead of just creating a world model, I would like to test out the concept of making the world model learn the best actions given a current state. This will have two advantages, It would help in enriching the understanding of the world model about the entire game and also It could be used to train RL Agents or in other things like rewards, etc. 
+
+### Use of AI
+I have used LLMs only for help in the coding part, but for ideation and this report I haven't used LLMs.
