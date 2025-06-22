@@ -1,139 +1,37 @@
-# Disclaimer
+### Neural Pitfall
+![Neural Game Comparison](pitfall_examples/neural_random_game_trained_random_agent.gif)
 
-**This codebase has only been tested for Atari Breakout. It is very hacky, trained on a small number of samples, and is not at all optimized. Use at your own risk!**
+### What did I do?
+I extended this repo's code for Atari's pitfall game. The main reason to choose this game was because It had a timer included, as was mentioned in the additional follow-up task and since it was already a Atari Game hence setting up the environment was relatively straightforward which gave me more time to focus on the architecture and general improvement of the overall pipeline. At the very end I also tried incorporating time embeddings and working on an architecture that could predict the next action given the current state (detailed this below of why I tried this). But due to time constraint I was unable to properly try this aspect. The current VQVAE architecture is working pretty good but the LatentMLPs aren't the best hence the model isn't working that good, this part still has scope of improvement.
 
----
+### Major Challenges that I faced
+The major challenge was in the training of the VQVAE itself. The existing architecture failed to capture the character in the reconstruction process. To fix this I simply added residual connections and changed the dimensions of the latent to 8*10 from 5*7. Apart from the changes in the VQVAE, I did similar additions to the StateActiontoLatent model.  
 
-# Atari Pixels Project
+### On the follow up:
+Without any time embeddings or any external signal of time, after a certain point the time remains same or oscillates between certain values. A proper fix would include introducing time embeddings as well in the current architecture. 
 
-This projects aims to create a neural playable version of Atari Breakout by learning purely from videos of the game. It's a small replica of what [Google's Genie project](https://deepmind.google/discover/blog/genie-2-a-large-scale-foundation-world-model/), where they learned an interactive and playable world models purely through videos of game.
+### Failure Example of Previous Models!
+![Failure Example of Previous Models!](pitfall_examples/missing_character.png)
 
-**Watch the video**
+### Residuals Help in Capturing the Character
+![Residuals Help in Capturing the Character](pitfall_examples/improved_model.png)
 
-[![Watch the video](https://img.youtube.com/vi/H8Eh1HlLzZM/0.jpg)](https://www.youtube.com/watch?v=H8Eh1HlLzZM)
+### Why did you pick the particular project?
+Compared to the other projects I found this to be the most interesting and the most new one for me. I had relatively less domain knowledge for this project compared to the other projects and I also wanted to explore world models from a long time so this seemed to be the perfect starting point.
 
+### What did you learn in the project?
+I mainly learned about the basic concepts of world models and how they are build. Apart from that I was also able to revisit the concepts of video prediction and RL. 
 
-## Part 1: DQN Training & Exploration
-- Implements a Deep Q-Network (DQN) agent for Atari Breakout.
-- Supports two exploration strategies:
-  - **Temperature-based (Boltzmann) exploration** with Prioritized Experience Replay (PER).
-  - **Random Network Distillation (RND)** for intrinsic motivation and improved exploration.
-- Modular, efficient, and test-driven codebase.
-- Current progress: Agent achieves a score up to 20.
-- Next steps: Train for longer, increase max steps per episode to 10,000, and target scores of 200+.
+### What surprised you the most?
+One surprising thing which I observed was that the world model's performance is highly dependent on the LatentMLPs and the agent used to generate the training data for the latent model, although it was kind of intuitive once I noticed this issue. To be precise, what I observed was that if the accuracy of the latentMLPs was low then the world model stegnates and it only predicted from a fixed no. of states. Once I was able to get the accuracy a little higher the world model performed better and it was no lonber generating from a fixed set of states.
 
-See [part1.md](part1.md) for full details, implementation, and next steps.
+### If you had more compute/time, what would you have done?
+I would have focused on making the architecture more general and much larger so that I could train it on the entire set of atari games. I also tried a fun thing, that is to try to predict the next action given the current state along side next frame prediction. It had two benefits, First of all, prediction of next frame along side next action or other similar information helps in having better next state prediction generation and secondly, I have had this thought in mind, that can we train a world model that could also suggest the best next action by itself, based on it's demonstrations hence, training the model to predict the next best action could also help in this. 
 
----
+### If you had to write a paper on the project, what else needs to be done?
+As already mentioned I would like to extend it to create a generalized architeccture that can create any atari game and also at the same time Instead of just creating a world model, I would like to test out the concept of making the world model learn the best actions given a current state. This will have two advantages, It would help in enriching the understanding of the world model about the entire game and also It could be used to train RL Agents or in other things like rewards, etc. 
 
-## Getting Started
+### Use of AI
+I have used LLMs only for help in the coding part, but for ideation and this report I haven't used LLMs.
 
-### 1. Install Dependencies and Atari ROMs
-```bash
-pip install -r requirements.txt
-python -m AutoROM --accept-license
-```
-
-### 2. Train the DQN Agent
-- **Default (temperature-based exploration):**
-  ```bash
-  python train_dqn.py
-  ```
-- **RND-based exploration:**
-  ```bash
-  python train_dqn.py --exploration_mode rnd
-  ```
-- Additional arguments (see `python train_dqn.py --help`) allow you to control episodes, buffer size, and more.
-
-### 3. Generate Gameplay Videos
-- To record videos of a trained (or random) agent:
-  ```bash
-  python record_videos.py --checkpoint_path <path_to_checkpoint> --output_dir videos/
-  e.g. python record_videos.py --bulk --total_videos 100 --percent_random 15 --output_dir bulk_videos
-  ```
-- Replace `<path_to_checkpoint>` with the path to your saved model checkpoint (see `checkpoints/`).
-- Videos will be saved as MP4 files in the specified output directory.
-
----
-
-## Part 2: Train Latent Action Prediction Model
-- **Prepare data:** Ensure gameplay videos are available in `bulk_videos/` (from Part 1).
-- **Train VQ-VAE latent action model:**
-  ```bash
-  python train_latent_action.py
-  ```
-- **Checkpoints and logs:**
-  - Best model: `checkpoints/latent_action/best.pt`
-  - Processed data: see `data/` and `vqvae_recons/`
-  - Training logs and metrics: Weights & Biases (wandb)
-- **Evaluation:**
-  - Run `test_latent_action_model.py` for automated tests and metrics
-  - Visualize reconstructions and codebook usage as described in part2.md
-
-See [part2.md](part2.md) for full details, implementation, and next steps.
-
----
-
-## Part 3: Next Frame Prediction Model (World Model)
-- **Note:** The decoder from Part 2 serves as the world model. No separate training is required unless you wish to experiment with alternative architectures.
-- **Evaluate world model:**
-  - Use the decoder to predict next frames given current frame and latent action index
-  - For multi-step prediction and rollout analysis, see evaluation code in `test_latent_action_model.py`
-
----
-
-## Part 4: Train Action-to-Latent Mapping Model
-- **Extract (action, latent_code) pairs using trained VQ-VAE:**
-  ```bash
-  python collect_action_latent_pairs.py
-  ```
-  - Output: `data/actions/action_latent_pairs.json`
-- **Train the action-to-latent MLP:**
-  ```bash
-  python train_action_to_latent.py
-  ```
-  - Best checkpoint: `checkpoints/latent_action/action_to_latent_best.pt`
-- **Evaluate mapping accuracy:**
-  - Run `test_latent_action_data_collection.py` and `test_latent_action_model.py`
-  - Analyze accuracy and code distributions as described in part4.md
-
-See [part4.md](part4.md) for full details, implementation, and next steps.
-
----
-
-## Part 5: Playable Neural Breakout (World Model Demo)
-- **Run a random agent in the neural world model:**
-  ```bash
-  python neural_random_game.py
-  ```
-  - Output: `data/neural_random_game.gif` (video of neural gameplay)
-- **Play Breakout using the neural world model:**
-  ```bash
-  python play_neural_breakout.py
-  ```
-  - Controls: SPACE (Fire), LEFT/RIGHT ARROW, PERIOD (NOOP), ESC/Q (Quit)
-  - Requires trained models from Parts 2 and 4
-- **All inference runs on GPU if available, otherwise MPS/CPU.**
-- **For best performance, ensure torch.compile is enabled and models are on CUDA.**
-
-See [part5.md](part5.md) for full details, implementation, and next steps.
-
----
-
-## Utility & Debug Scripts
-- **debug_color_channels.py:** Visualizes and compares color channels between environment frames and PNG files to debug color mismatches.
-- **debug_first_step_difference.py:** Compares predicted vs. ground truth latents and reconstructions for the first step of the neural random game, helping debug model discrepancies.
-- **neural_random_game.py:** Runs a random agent in the neural world model and saves a GIF of the generated gameplay for qualitative evaluation.
-
----
-## Suggested Improvements
-- Train DQN agent for longer (by increasing max steps per episode to 10,000 and target scores of 200+)
-- Generate 1000s of videos of agent playing with a higher percentage of random agent actions:
-  ```bash
-  python record_videos.py --bulk --total_videos 1000 --percent_random 20 --output_dir bulk_videos
-  ```
-- Train the latent action model for much longer to achieve convergence
-- Collect much more data for action → latent code mapping
-- Try with different Atari games
-
-
+[Models Link](https://drive.google.com/drive/folders/1D2gJAx2NXLxMBhbp3JegRoiLJFmoK4ch?usp=sharing)
