@@ -88,7 +88,7 @@ def main():
     
     # Load world model
     print("[INFO] Loading world model...")
-    world_model, _ = load_latent_action_model('checkpoints/latent_action/best.pt', device)
+    world_model, _ = load_latent_action_model('checkpoints/best.pt', device)
     world_model.to(device)
     world_model.eval()
     if device.type == 'cuda':
@@ -96,10 +96,14 @@ def main():
     
     # Load action-to-latent model
     print("[INFO] Loading action-to-latent model...")
-    # action_model = ActionStateToLatentMLP().to(device)
-    # ckpt = torch.load('checkpoints/latent_action/action_state_to_latent_best.pt', map_location=device)
-    action_model = ActionToLatentMLP().to(device)
-    ckpt = torch.load('checkpoints/latent_action/action_to_latent_best.pt', map_location=device)
+    action_model = ActionStateToLatentMLP(
+            action_dim=18,
+            latent_dim=80,
+            codebook_size=512,      # ← keep in sync
+        ).to(device)
+    ckpt = torch.load('checkpoints/action_state_to_latent_best.pt', map_location=device)
+    # action_model = ActionToLatentMLP().to(device)
+    # ckpt = torch.load('checkpoints/latent_action/action_to_latent_best.pt', map_location=device)
     action_model.load_state_dict(ckpt['model_state_dict'], strict = False)
     action_model.eval()
     if device.type == 'cuda':
@@ -107,7 +111,7 @@ def main():
     
     # Load initial frame
     print("[INFO] Loading initial frame...")
-    init_img = Image.open('random_test/0.png').convert('RGB')
+    init_img = Image.open('/Users/db/Downloads/28.png').convert('RGB')
     init_frame_np = np.array(init_img, dtype=np.float32) / 255.0
     current_frame = torch.from_numpy(init_frame_np).permute(2, 0, 1).unsqueeze(0).to(device)
     
@@ -198,11 +202,11 @@ def main():
             
             # Get action prediction
             onehot = action_to_onehot(action_idx, N_ACTIONS, device)
-            logits = action_model(onehot)
+            logits = action_model(onehot, stacked_frames)
             indices = action_model.sample_latents(logits, temperature=args.temperature)
             
             # Reshape indices and get embeddings
-            indices = indices.view(1, 5, 7)
+            indices = indices.view(1, 8, 10)
             embeddings = world_model.vq.embeddings
             indices = indices.to(embeddings.weight.device)
             quantized = embeddings(indices)
